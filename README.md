@@ -29,9 +29,6 @@
  - [Check Code]
  - Checks the code for errors (Note. Not particularly accurate. It mainly only checks for nil values, won't log an error if you mess up node registry)
  
- - [Delete Map Shutdown]
- - Does pretty much what it says. It deletes the map.sqlite and makes the world shutdown. (Note. [DO NOT USE IN MULTIPLAYER WORLDS!! THIS WILL WIPE OUT EVERYTHING THAT ISN'T PART OF THE MAP SEED! AND I MEAN EVERYTHING.])
- 
  - [Dependency Map]
  - Once again does pretty much what it says. It lists the dependencies of each enabled mod. (Note. currently only in chat format. formspec and file coming soon.)
  
@@ -50,39 +47,9 @@
  - [Mts2Lua All]
  - Convert all Mts schematic files in a specified directory into .lua files.
  
- - [Rename Png]
- - Renames the specified png file.
- 
- - [Rename Png All]
- - Replaces a specified word that is found in all png files in a specified mod.
- 
- - [Both Below Are Outdated Use Bulk Replace Instead]
- 
- - [Replace In File] 
- - replaces a word, in a mod. With the specified file.
- 
- - [Replace In Modconf]
- - Same as above, but does the mod.conf
- 
- - [Review Code]
- - Reviews your code looking for whitespace, unused, and undefined variables (Note. [Not Accurate.])
- 
 ## Extras ##
 ------------
 ############
-
- - The following commands use os functions.
- 
- - [delete_map_shutdown] 
- - os.remove
- - Used for deleting the map.sqlite.
- 
- - [rename_png]
- - os.rename
- - Used for renaming the png files.
- 
- - [rename_png_all] 
- 
  
  - [Credits]
  - Incase you're wondering. If you use this mod. I'd appreciate that you'd credit me for the use of it. It's not required, but I do appreciate it.
