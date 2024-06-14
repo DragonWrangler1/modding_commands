@@ -3,16 +3,15 @@ local S = minetest.get_translator("modding_commands")
 minetest.register_on_joinplayer(function(player)
 	local player_name = player:get_player_name()
 	local message = minetest.colorize("#00FFFF", "<Modding Commands> Please make backups of any files you plan to modify with any of the commands from the modding_commands mod. This mod is still experimental, but fully functional (for the most part. Besides the commands that aren't included ingame). Please keep all backups until you verify the modified files work properly.") 
-	minetest.chat_send_player(player_name, message)
+	if not ie then
+		local disclamer = minetest.colorize("#FF4000", "This mod requires an insecure environment, if you haven't done so already, please add it to secure.trusted_mods. If you don't trust it please examine the code.")
+		minetest.chat_send_player(player_name, disclamer)
+	end
 end)
 
 local DIR_DELIM = "/"
 
 local ie = minetest.request_insecure_environment()
-
-if not ie then
-	error("Mod requires an insecure environment, but it was not granted.")
-end
 
 -- The following script checks for invalid whitespace areas.
 minetest.register_chatcommand("check_whitespace", {
