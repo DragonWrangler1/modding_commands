@@ -503,6 +503,25 @@ minetest.register_chatcommand("checkcode", {
 })
 
 -- The following script looks through all mts files in a specified directory and reads them to see if they contain unknown nodes.
+
+local function get_files_in_dir(path, extension)
+    local files = {}
+    local p = io.popen('find "' .. path .. '" -type f -name "*' .. extension .. '"')
+    for file in p:lines() do
+        table.insert(files, file)
+    end
+    p:close()
+    return files
+end
+
+local function read_mts_file(filename)
+    local success, schem = pcall(minetest.read_schematic, filename, {})
+    if not success then
+        return nil, "Failed to read schematic: " .. filename
+    end
+    return schem
+end
+
 local function save_report(filename, report)
 	local file, err = io.open(filename, "w")
 	if not file then
@@ -610,70 +629,6 @@ minetest.register_chatcommand("check_nodes", {
 		return
 	end,
 })
-
-
---[[ The following script replaces the unknown nodes name with the name of a different registered one. (Note. Does not work).
-minetest.register_chatcommand("replace_word", {
-	params = "<modname> <original_word> <replacement_word>",
-	description = "Find and replace invalid node names in Lua files corresponding to the MTS files",
-	privs = {server=true},
-	func = function(name, param)
-		local modname, original_word, replacement_word = param:match("(%S+)%s+(%S+)%s+(%S+)")
-		if not modname or not original_word or not replacement_word then
-			return false, "Usage: /replace_word <modname> <original_word> <replacement_word>"
-		end
-		local modpath = minetest.get_modpath(modname)
-		if not modpath then
-			return false, "Mod not found: " .. modname
-		end
-		local filename = modpath .. "/report.txt"
-		local file, err = io.open(filename, "r")
-		if not file then
-			return false, "Failed to open report file: " .. err
-		end
-		local mts_to_lua = {}
-		for line in file:lines() do
-			local file_name = line:match("^%s*-%s*(.+)")
-			if file_name and file_name:find("%.mts$") then
-				local lua_file_name = file_name:gsub("%.mts$", ".lua")
-				local lua_file_path = modpath .. "/" .. lua_file_name
-				if io.open(lua_file_path, "r") then
-					mts_to_lua[file_name] = lua_file_path
-				end
-			end
-		end
-		file:close()
-		if next(mts_to_lua) == nil then
-			return false, "No Lua files found in the report."
-		end
-		local num_modifications = 0
-		for mts_file, lua_file_path in pairs(mts_to_lua) do
-			local file, err = io.open(lua_file_path, "r")
-			if not file then
-				minetest.log("error", "Failed to open Lua file for reading: " .. lua_file_path)
-			else
-				local content = file:read("*all")
-				file:close()
-				local replaced_content, num_replacements = content:gsub(original_word, replacement_word)
-				if num_replacements > 0 then
-					local file, err = io.open(lua_file_path, "w")
-					if not file then
-						minetest.log("error", "Failed to open Lua file for writing: " .. lua_file_path)
-					else
-						file:write(replaced_content)
-						file:close()
-						num_modifications = num_modifications + 1
-					end
-				end
-			end
-		end
-		if num_modifications > 0 then
-			return true, "Word replaced successfully in " .. num_modifications .. " Lua files."
-		else
-			return false, "Word not found in any Lua files."
-		end
-	end,
-})]]
 
 -- The following script changes all mts files in a specified modpath into lua files.
 minetest.register_chatcommand("mts2lua_all", {
@@ -1001,4 +956,3 @@ minetest.register_chatcommand("rename_png_all", {
 		return true, "Renaming completed."
 	end,
 })
-
