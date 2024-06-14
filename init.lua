@@ -8,46 +8,12 @@ end)
 
 local DIR_DELIM = "/"
 
--- The following script replaces specified words in a specified file.
-minetest.register_chatcommand("replace_in_file", {
-	params = "<modname> <filepath> <oldword> <newword>",
-	privs = {server = true},
-	description = "Replace a word in a specific Lua file of a mod",
-	func = function(name, param)
-		local modname, filepath, oldword, newword = string.match(param, "^(%S+)%s+(%S+)%s+(%S+)%s+(%S+)$")
-		if not modname or not filepath or not oldword or not newword then
-			return false, "Invalid usage. Correct usage: /replace_in_file <modname> <filepath> <oldword> <newword>"
-		end
-		local modpath = minetest.get_modpath(modname)
-		if not modpath then
-			return false, "Mod " .. modname .. " not found."
-		end
-		local fullpath = modpath .. "/" .. filepath
-		local file = io.open(fullpath, "r")
-		if not file then
-			return false, "File " .. filepath .. " not found in mod " .. modname .. "."
-		end
-		if fullpath:sub(-4) ~= ".lua" then
-			file:close()
-			return false, "File " .. filepath .. " is not a Lua file."
-		end
-		local content = file:read("*all")
-		file:close()
-		local new_content, replacements = content:gsub(oldword, newword)
-		if replacements > 0 then
-			file = io.open(fullpath, "w")
-			if not file then
-				return false, "Failed to open file " .. filepath .. " for writing."
-			end
-			file:write(new_content)
-			file:close()
-			minetest.chat_send_player(name, "Replaced " .. replacements .. " occurrences in file: " .. filepath)
-		else
-			minetest.chat_send_player(name, "No occurrences of '" .. oldword .. "' found in file: " .. filepath)
-		end
-		return true, "Word replacement completed in file: " .. filepath .. ". Total replacements: " .. replacements
-	end,
-})
+local ie = minetest.request_insecure_environment()
+
+if not ie then
+	error("Mod requires an insecure environment, but it was not granted.")
+end
+
 -- The following script checks for invalid whitespace areas.
 minetest.register_chatcommand("check_whitespace", {
 	params = "<modname> <filename>",
@@ -63,7 +29,7 @@ minetest.register_chatcommand("check_whitespace", {
 			return false, "Mod not found: " .. modname
 		end
 		local filepath = modpath .. "/" .. filename
-		local file = io.open(filepath, "r")
+		local file = ie.io.open(filepath, "r")
 		if not file then
 			return false, "File not found: " .. filename
 		end
@@ -102,184 +68,6 @@ minetest.register_chatcommand("check_whitespace", {
 	end
 end,
 })
--- Doesn't Work properly yet. Returns too many times falsely
--- The following script reviews a certain file for invalid whitespace and undefined/unused variables. (Read the above)
-minetest.register_chatcommand("review_code", {
-	params = "<modname> <filename>",
-	description = "Checks for improper indentation (leading/trailing spaces), unused and undefined variables in the specified mod and file, ignoring comments (Note. Doesn't work properly).",
-	privs = {server = true},
-	func = function(name, param)
-		local modname, filename = param:match("(%S+)%s+(%S+)")
-		if not modname or not filename then
-			return false, "Invalid parameters. Usage: /review_code <modname> <filename>"
-		end
-		local modpath = minetest.get_modpath(modname)
-		if not modpath then
-			return false, "Mod not found: " .. modname
-		end
-		local filepath = modpath .. "/" .. filename
-		local file = io.open(filepath, "r")
-		if not file then
-			return false, "File not found: " .. filename
-		end
-		local lines = {}
-		local defined_vars = {}
-		local used_vars = {}
-		local line_num = 1
-		local in_multiline_comment = false
-		local ignore_vars = {
-			["if"] = true,
-			["end"] = true,
-			["for"] = true,
-			["while"] = true,
-			["repeat"] = true,
-			["until"] = true,
-			["function"] = true,
-			["local"] = true,
-			["return"] = true,
-			["true"] = true,
-			["false"] = true,
-			["nil"] = true
-		}
-		local function add_global_vars_from_other_mods()
-		local global_vars = {
-		"minetest", "vector", "math", "string", "table", "os", "io", "debug", "coroutine"
-		}
-		for _, var in ipairs(global_vars) do
-			ignore_vars[var] = true
-		end
-	end
-	add_global_vars_from_other_mods()
-	for line in file:lines() do
-		local check_line = line
-		if in_multiline_comment then
-			if line:match(".*%]%]") then
-				in_multiline_comment = false
-			end
-			line_num = line_num + 1
-		elseif line:match(".*%[%[.*") then
-			in_multiline_comment = true
-			line_num = line_num + 1
-		else
-			check_line = check_line:gsub("%-%-.*", "")
-			local indent = check_line:match("^ *")
-			if indent and indent:match(" $") then
-				table.insert(lines, "Line " .. line_num .. ": Trailing space in indentation")
-			end
-			if line:match(".* +$") then
-				table.insert(lines, "Line " .. line_num .. ": Trailing space at end of line")
-			end
-			for var in check_line:gmatch("local%s+(%w+)") do
-				if not ignore_vars[var] then
-					defined_vars[var] = line_num
-				end
-			end
-			for var in check_line:gmatch("(%w+)") do
-				if not defined_vars[var] and not ignore_vars[var] then
-					table.insert(used_vars, {var = var, line = line_num})
-				end
-			end
-			line_num = line_num + 1
-		end
-	end
-	file:close()
-	for var, defined_line in pairs(defined_vars) do
-		local used = false
-		for _, usage in ipairs(used_vars) do
-			if usage.var == var then
-				used = true
-				break
-			end
-		end
-		if not used then
-			table.insert(lines, "Line " .. defined_line .. ": Unused variable '" .. var .. "'")
-		end
-	end
-	for _, usage in ipairs(used_vars) do
-		if not defined_vars[usage.var] and not ignore_vars[usage.var] then
-			table.insert(lines, "Line " .. usage.line .. ": Undefined variable '" .. usage.var .. "'")
-		end
-	end
-	if #lines == 0 then
-		return true, "No improper indentation, trailing spaces, or variable issues found in " .. filename
-	else
-		local result = "Issues found in " .. filename .. ":\n"
-		result = result .. table.concat(lines, "\n")
-		return true, result
-	end
-end,
-})
-
--- The Following Script Resets the world to default. Removing everything. Use with CAUTION!. Not for multi-player world use. Only for cluttered testing worlds.
-local function delete_map_and_shutdown()
-	local map_file = minetest.get_worldpath() .. "/map.sqlite"
-	local file = io.open(map_file, "r")
-	if file then
-		file:close()
-		if os.remove(map_file) then
-			minetest.request_shutdown("Map file deleted and server shut down requested by admin.")
-			return true
-		else
-			minetest.log("error", "Failed to delete map file.")
-			return false
-		end
-	else
-		minetest.log("error", "Map file does not exist.")
-		return false
-	end
-end
-minetest.register_chatcommand("delete_map_shutdown", {
-	description = "Delete map file and shut down server",
-	privs = {server = true},
-	func = function(name, param)
-		if not minetest.check_player_privs(name, {server=true}) then
-			minetest.chat_send_player(name, "You don't have permission to use this command.")
-			return
-		end
-		if delete_map_and_shutdown() then
-			minetest.chat_send_player(name, "Map file deleted and server shut down.")
-		else
-			minetest.chat_send_player(name, "Failed to delete map file.")
-		end
-	end,
-})
-
--- The following script replaces a specified word in the specified mod.conf.
-minetest.register_chatcommand("replace_in_modconf", {
-	params = "<modname> <oldword> <newword>",
-	description = "Replace a word in the mod.conf file of a mod",
-	privs = {server = true},
-	func = function(name, param)
-		local modname, oldword, newword = string.match(param, "^(%S+)%s+(%S+)%s+(%S+)$")
-		if not modname or not oldword or not newword then
-			return false, "Invalid usage. Correct usage: /replace_in_modconf <modname> <oldword> <newword>"
-		end
-		local modpath = minetest.get_modpath(modname)
-		if not modpath then
-			return false, "Mod " .. modname .. " not found."
-		end
-		local confpath = modpath .. "/mod.conf"
-		local file = io.open(confpath, "r")
-		if not file then
-			return false, "mod.conf file not found in mod " .. modname .. "."
-		end
-		local content = file:read("*all")
-		file:close()
-		local new_content, replacements = content:gsub(oldword, newword)
-		if replacements > 0 then
-			file = io.open(confpath, "w")
-			if not file then
-				return false, "Failed to open mod.conf file for writing."
-			end
-			file:write(new_content)
-			file:close()
-			minetest.chat_send_player(name, "Replaced " .. replacements .. " occurrences in mod.conf file.")
-		else
-			minetest.chat_send_player(name, "No occurrences of '" .. oldword .. "' found in mod.conf file.")
-		end
-		return true, "Word replacement completed in mod.conf file. Total replacements: " .. replacements
-	end,
-})
 
 -- The following script can replace a specified word in all lua files of a specified mod.
 minetest.register_chatcommand("bulk_replace", {
@@ -297,7 +85,7 @@ minetest.register_chatcommand("bulk_replace", {
 		end
 		local total_replacements = 0
 		local function replace_in_file(filepath)
-		local file = io.open(filepath, "r")
+		local file = ie.io.open(filepath, "r")
 		if not file then
 			return false, "File " .. filepath .. " not found."
 		end
@@ -305,7 +93,7 @@ minetest.register_chatcommand("bulk_replace", {
 		file:close()
 		local new_content, replacements = content:gsub(oldword, newword)
 		if replacements > 0 then
-			file = io.open(filepath, "w")
+			file = ie.io.open(filepath, "w")
 			if not file then
 				return false, "Failed to open file " .. filepath .. " for writing."
 			end
@@ -367,7 +155,7 @@ function searchMods(keyword)
 	return matchingMods
 end
 function containsKeyword(file, keyword)
-	local f = io.open(file, "r")
+	local f = ie.io.open(file, "r")
 	if f then
 		local content = f:read("*all")
 		f:close()
@@ -416,7 +204,7 @@ minetest.register_chatcommand("depmap", {
 					depends = {},
 					optional_depends = {}
 				}
-				local file = io.open(mod_conf, "r")
+				local file = ie.io.open(mod_conf, "r")
 				if file then
 					for line in file:lines() do
 						if line:match("^description%s*=") then
@@ -433,7 +221,7 @@ minetest.register_chatcommand("depmap", {
 					end
 					file:close()
 				end
-				file = io.open(depends_conf, "r")
+				file = ie.io.open(depends_conf, "r")
 				if file then
 					for line in file:lines() do
 						local dep = line:match("^([^%s#]+)")
@@ -487,7 +275,7 @@ minetest.register_chatcommand("checkcode", {
 			return false, "Mod '" .. mod_name .. "' not found"
 		end
 		local file_path = minetest.get_modpath(mod_name) .. "/" .. file_name
-		local file, err_msg = io.open(file_path, "r")
+		local file, err_msg = ie.io.open(file_path, "r")
 		if not file then
 			return false, "Error opening file: " .. err_msg
 		end
@@ -506,7 +294,7 @@ minetest.register_chatcommand("checkcode", {
 
 local function get_files_in_dir(path, extension)
     local files = {}
-    local p = io.popen('find "' .. path .. '" -type f -name "*' .. extension .. '"')
+    local p = ie.io.popen('find "' .. path .. '" -type f -name "*' .. extension .. '"')
     for file in p:lines() do
         table.insert(files, file)
     end
@@ -523,7 +311,7 @@ local function read_mts_file(filename)
 end
 
 local function save_report(filename, report)
-	local file, err = io.open(filename, "w")
+	local file, err = ie.io.open(filename, "w")
 	if not file then
 		return false, err
 	end
@@ -552,7 +340,7 @@ minetest.register_chatcommand("check_nodes", {
 	func = function(name, param)
 		local modname, output = param:match("(%S+)%s*(.*)")
 		if not modname then
-			return false, "Usage: /check_nodes_3 <modname> [output: chat, formspec, file]"
+			return false, "Usage: /check_nodes <modname> [output: chat, formspec, file]"
 		end
 		if output == "" then
 			return false, "Invalid output option. Choose from: chat, formspec, file"
@@ -630,7 +418,6 @@ minetest.register_chatcommand("check_nodes", {
 	end,
 })
 
--- The following script changes all mts files in a specified modpath into lua files.
 minetest.register_chatcommand("mts2lua_all", {
 	description = "Convert all .mts schematic files in a mod directory to .lua files",
 	privs = {server = true},
@@ -643,16 +430,15 @@ minetest.register_chatcommand("mts2lua_all", {
 		end
 
 		local comments = comments_str == "comments"
-		local modpath = minetest.get_modpath(modname) .. "/schems"
+		local modpath = minetest.get_modpath(modname) .. "/schematics"
 
 		if not modpath then
 			return false, "Mod not found: " .. modname
 		end
 
 		local schem_files = minetest.get_dir_list(modpath, false)
-		local export_path = modpath .. DIR_DELIM .. "schematics_lua"
-
-		minetest.mkdir(export_path)
+		local export_path = modpath-- .. DIR_DELIM .. "schematics"
+		--minetest.mkdir(export_path) -- Ensure directory exists
 
 		for _, file in ipairs(schem_files) do
 			if file:sub(-4) == ".mts" then
@@ -662,7 +448,7 @@ minetest.register_chatcommand("mts2lua_all", {
 					local str = minetest.serialize_schematic(schematic, "lua", {lua_use_comments=comments})
 					local lua_file = file:sub(1, -5) .. ".lua"
 					local lua_path = export_path .. DIR_DELIM .. lua_file
-					local output_file = io.open(lua_path, "w")
+					local output_file = ie.io.open(lua_path, "w")
 					if output_file and str then
 						output_file:write(str)
 						output_file:flush()
@@ -670,9 +456,11 @@ minetest.register_chatcommand("mts2lua_all", {
 						minetest.chat_send_player(name, "Converted " .. file .. " to " .. lua_file)
 					else
 						minetest.chat_send_player(name, "Failed to convert " .. file)
+						minetest.log("error", "Failed to write Lua file: " .. lua_path)
 					end
 				else
 					minetest.chat_send_player(name, "Failed to read schematic " .. file)
+					minetest.log("error", "Failed to read schematic: " .. schem_path)
 				end
 			end
 		end
@@ -681,7 +469,9 @@ minetest.register_chatcommand("mts2lua_all", {
 	end,
 })
 
--- This command changes all lua schematic files in a specified directory into mts files and if specified replaces certain words in the process.
+
+
+--[[ This command changes all lua schematic files in a specified directory into mts files and if specified replaces certain words in the process.
 minetest.register_chatcommand("lua2mts_all", {
 	description = "Convert all .lua schematic files in a mod directory to .mts files with optional word replacements",
 	privs = {server = true},
@@ -698,7 +488,7 @@ minetest.register_chatcommand("lua2mts_all", {
 			return false, "Mod not found: " .. modname
 		end
 
-		modpath = modpath .. "/schems/schematics_lua"
+		modpath = modpath .. "/schematics"
 
 		local replacements = {}
 		if replacements_str ~= "" then
@@ -711,14 +501,14 @@ minetest.register_chatcommand("lua2mts_all", {
 		end
 
 		local lua_files = minetest.get_dir_list(modpath, false)
-		local export_path = modpath .. DIR_DELIM .. ".."
+		local export_path = modpath-- .. DIR_DELIM .. ".."
 
-		minetest.mkdir(export_path)
+		--minetest.mkdir(export_path)
 
 		for _, file in ipairs(lua_files) do
 			if file:sub(-4) == ".lua" then
 				local lua_path = modpath .. DIR_DELIM .. file
-				local input_file = io.open(lua_path, "r")
+				local input_file = ie.io.open(lua_path, "r")
 				if input_file then
 					local content = input_file:read("*all")
 					input_file:close()
@@ -755,7 +545,103 @@ minetest.register_chatcommand("lua2mts_all", {
 						local schem_string = minetest.serialize_schematic(schematic, "mts", {})
 
 						if schem_string then
-							local output_file = io.open(mts_path, "wb")
+							local output_file = ie.io.open(mts_path, "wb")
+							if output_file then
+								output_file:write(schem_string)
+								output_file:close()
+								minetest.chat_send_player(name, "Converted " .. file .. " to " .. mts_file)
+							else
+								minetest.chat_send_player(name, "Failed to write MTS file for " .. file)
+							end
+						else
+							minetest.chat_send_player(name, "Failed to serialize schematic for " .. file)
+						end
+					else
+						minetest.chat_send_player(name, "No schematic found in Lua file " .. file)
+					end
+				else
+					minetest.chat_send_player(name, "Failed to read Lua file " .. file)
+				end
+			end
+			::continue::
+		end
+
+		return true, "Conversion completed."
+	end,
+})
+]]
+
+minetest.register_chatcommand("lua2mts_all", {
+	description = "Convert all .lua schematic files in a mod directory to .mts files with optional word replacements",
+	privs = {server = true},
+	params = "<modname> [replacements]",
+	func = function(name, param)
+		local modname, replacements_str = string.match(param, "^([^ ]+) *(.*)$")
+
+		if not modname then
+			return false, "No mod name specified."
+		end
+
+		local modpath = minetest.get_modpath(modname)
+		if not modpath then
+			return false, "Mod not found: " .. modname
+		end
+
+		modpath = modpath .. "/schematics"
+
+		local replacements = {}
+		if replacements_str ~= "" then
+			for replacement in replacements_str:gmatch("[^,]+") do
+				local old, new = replacement:match("([^:]+):([^:]+)")
+				if old and new then
+					replacements[old] = new
+				end
+			end
+		end
+
+		local lua_files = minetest.get_dir_list(modpath, false)
+
+		for _, file in ipairs(lua_files) do
+			if file:sub(-4) == ".lua" then
+				local lua_path = modpath .. DIR_DELIM .. file
+				local input_file = ie.io.open(lua_path, "r")
+				if input_file then
+					local content = input_file:read("*all")
+					input_file:close()
+
+					-- Apply replacements
+					for old, new in pairs(replacements) do
+						content = content:gsub(old, new)
+					end
+
+					local schematic_func, err = loadstring(content)
+				
+					if not schematic_func then
+						minetest.chat_send_player(name, "Failed to load Lua file " .. file .. ": " .. err)
+						goto continue
+					end
+
+					local schematic_env = {}
+					setfenv(schematic_func, schematic_env)
+					
+					local success, result = pcall(schematic_func)
+					
+					if not success then
+						minetest.chat_send_player(name, "Error executing Lua file " .. file .. ": " .. result)
+						goto continue
+					end
+
+					local schematic = schematic_env.schematic
+					
+					if schematic then
+						local mts_file = file:sub(1, -5) .. ".mts"
+						local mts_path = modpath .. DIR_DELIM .. ".." .. DIR_DELIM .. "schematics" .. DIR_DELIM .. mts_file
+
+						-- Serialize schematic
+						local schem_string = minetest.serialize_schematic(schematic, "mts", {})
+
+						if schem_string then
+							local output_file = ie.io.open(mts_path, "wb")
 							if output_file then
 								output_file:write(schem_string)
 								output_file:close()
@@ -780,179 +666,59 @@ minetest.register_chatcommand("lua2mts_all", {
 	end,
 })
 
+
 -- The following script registers all schematics in a certain directory
 minetest.register_chatcommand("list_schematics", {
-	params = "<modname>",
-	privs = {server = true},
-	description = "List all schematics in a certain mod's schematic folder",
-	func = function(name, param)
-		if param == "" then
-			return false, "Please provide a mod name."
-		end
-		local modname = param
-		local modpath = minetest.get_modpath(modname)
-		if not modpath then
-			return false, "Mod not found: " .. modname
-		end
-		local schematic_folder = modpath .. "/schematics"
-		local file_list = {}
-		local handle = io.popen('find "' .. schematic_folder .. '" -type f -name "*.mts" -o -name "*.lua"')
-		if handle then
-			for filename in handle:lines() do
-				file_list[#file_list + 1] = filename:gsub(schematic_folder .. "/", "")
-			end
-			handle:close()
-		else
-			return false, "Failed to open schematic folder."
-		end
-		if #file_list == 0 then
-			return true, "No schematics found in the mod: " .. modname .. ". Either the folder doesn't exist or it is empty. Try /list_schems instead"
-		end
-		local result = "Schematics in " .. modname .. ":\n"
-		for _, file in ipairs(file_list) do
-			result = result .. file .. "\n"
-		end
-		return true, result
-	end,
+    params = "<modname>",
+    privs = {server = true},
+    description = "List all schematics in a certain mod's schematic folder",
+    func = function(name, param)
+        if param == "" then
+            return false, "Please provide a mod name."
+        end
+        local modname = param
+        local modpath = minetest.get_modpath(modname)
+        if not modpath then
+            return false, "Mod not found: " .. modname
+        end
+        local schematic_folder = modpath .. "/schematics"
+        local file_list = minetest.get_dir_list(schematic_folder, false) or {}
+
+        if #file_list == 0 then
+            return true, "No schematics found in the mod: " .. modname .. ". Either the folder doesn't exist or it is empty. Try /list_schems instead"
+        end
+        local result = "Schematics in " .. modname .. ":\n"
+        for _, file in ipairs(file_list) do
+            result = result .. file .. "\n"
+        end
+        return true, result
+    end,
 })
+
 -- The following script is an alternative to the one above incase a mod doesn't have a schematics folder, but rather a schems folder
 minetest.register_chatcommand("list_schems", {
-	params = "<modname>",
-	privs = {server = true},
-	description = "List all schematics in a certain mod's schem folder",
-	func = function(name, param)
-		if param == "" then
-			return false, "Please provide a mod name."
-		end
-		local modname = param
-		local modpath = minetest.get_modpath(modname)
-		if not modpath then
-			return false, "Mod not found: " .. modname
-		end
-		local schematic_folder = modpath .. "/schems"
-		local file_list = {}
-		local handle = io.popen('find "' .. schematic_folder .. '" -type f -name "*.mts" -o -name "*.lua"')
-		if handle then
-			for filename in handle:lines() do
-				file_list[#file_list + 1] = filename:gsub(schematic_folder .. "/", "")
-			end
-			handle:close()
-		else
-			return false, "Failed to open schems folder."
-		end
-		if #file_list == 0 then
-			return true, "No schematics found in the mod: " .. modname .. ". Either the folder doesn't exist or it is empty. Try /list_schematics instead"
-		end
-		local result = "Schematics in " .. modname .. ":\n"
-		for _, file in ipairs(file_list) do
-			result = result .. file .. "\n"
-		end
-		return true, result
-	end,
-})
--- The following script renames a specified png file in the specified mod.
-minetest.register_chatcommand("rename_png", {
-	description = ("Rename .png file in a specified mod"),
-	privs = {server = true},
-	params = ("<mod_name> <current_filename>.png <new_filename>.png"),
-	func = function(name, param)
-		local mod_name, current_filename, new_filename = string.match(param, "^([^ ]+) ([^ ]+) ([^ ]+)$")
+    params = "<modname>",
+    privs = {server = true},
+    description = "List all schematics in a certain mod's schem folder",
+    func = function(name, param)
+        if param == "" then
+            return false, "Please provide a mod name."
+        end
+        local modname = param
+        local modpath = minetest.get_modpath(modname)
+        if not modpath then
+            return false, "Mod not found: " .. modname
+        end
+        local schematic_folder = modpath .. "/schems"
+        local file_list = minetest.get_dir_list(schematic_folder, false) or {}
 
-		if not mod_name or not current_filename or not new_filename then
-			return false, ("Invalid parameters. Usage: <mod_name> <current_filename>.png <new_filename>.png")
-		end
-
-		-- Ensure both filenames have the .png suffix
-		if not current_filename:match("%.png$") then
-			current_filename = current_filename .. ".png"
-		end
-		if not new_filename:match("%.png$") then
-			new_filename = new_filename .. ".png"
-		end
-
-		-- Construct full file paths within the specified mod
-		local current_filepath = minetest.get_modpath(mod_name) .. "/textures" .. DIR_DELIM .. current_filename
-		local new_filepath = minetest.get_modpath(mod_name) .. "/textures" .. DIR_DELIM .. new_filename
-
-		-- Check if the current file exists
-		local file = io.open(current_filepath, "r")
-		if not file then
-			return false, S("File not found: @1", current_filepath)
-		end
-		file:close()
-
-		-- Rename the file
-		local success, err = os.rename(current_filepath, new_filepath)
-		if success then
-			return true, S("Renamed @1 to @2 in mod @3", current_filename, new_filename, mod_name)
-		else
-			return false, S("Failed to rename: @1", err)
-		end
-	end,
-})
--- The following script renames all png files in a certain directory with specified replacement word(s)
-minetest.register_chatcommand("rename_png_all", {
-	description = "Rename all .png files in a mod directory with optional word replacements",
-	privs = {server = true},
-	params = "<modname> [replacements]",
-	func = function(name, param)
-		local modname, replacements_str = string.match(param, "^([^ ]+) *(.*)$")
-
-		if not modname then
-			return false, "No mod name specified."
-		end
-
-		local modpath = minetest.get_modpath(modname) .. "/textures"
-
-		if not modpath then
-			return false, "Mod not found: " .. modname
-		end
-
-		minetest.chat_send_player(name, "Mod path: " .. modpath)-- Debug output
-
-		local replacements = {}
-		if replacements_str ~= "" then
-			for replacement in replacements_str:gmatch("[^,]+") do
-				local old, new = replacement:match("([^:]+):([^:]+)")
-				if old and new then
-					replacements[old] = new
-				end
-			end
-		end
-
-		minetest.chat_send_player(name, "Replacements: " .. minetest.serialize(replacements))-- Debug output
-
-		local png_files = minetest.get_dir_list(modpath, false)
-
-		for _, file in ipairs(png_files) do
-			minetest.chat_send_player(name, "Processing file: " .. file)-- Debug output
-
-			if file:sub(-4) == ".png" then
-				local new_file = file
-				for old, new in pairs(replacements) do
-					new_file = new_file:gsub(old, new)
-				end
-
-				minetest.chat_send_player(name, "New file name: " .. new_file)-- Debug output
-
-				if new_file ~= file then
-					local old_path = modpath .. DIR_DELIM .. file
-					local new_path = modpath .. DIR_DELIM .. new_file
-
-					minetest.chat_send_player(name, "Renaming " .. old_path .. " to " .. new_path)-- Debug output
-
-					local success, err = os.rename(old_path, new_path)
-					if success then
-						minetest.chat_send_player(name, "Renamed " .. file .. " to " .. new_file)
-					else
-						minetest.chat_send_player(name, "Failed to rename " .. file .. ": " .. err)
-					end
-				else
-					minetest.chat_send_player(name, "No changes made to " .. file)
-				end
-			end
-		end
-
-		return true, "Renaming completed."
-	end,
+        if #file_list == 0 then
+            return true, "No schematics found in the mod: " .. modname .. ". Either the folder doesn't exist or it is empty. Try /list_schematics instead"
+        end
+        local result = "Schematics in " .. modname .. ":\n"
+        for _, file in ipairs(file_list) do
+            result = result .. file .. "\n"
+        end
+        return true, result
+    end,
 })
