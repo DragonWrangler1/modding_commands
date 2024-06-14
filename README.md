@@ -81,7 +81,14 @@
  - os.rename
  - Used for renaming the png files.
  
- - [rename_png_all]
+ - [rename_png_all] 
+ 
+ 
+ - [Credits]
+ - Incase you're wondering. If you use this mod. I'd appreciate that you'd credit me for the use of it. It's not required, but I do appreciate it.
+ 
+ 
+ - Thank You for choosing Modding Commands. Enjoy.
  - os.rename
  - Used for renaming the png files.
  
