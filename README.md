@@ -56,7 +56,5 @@
  
  
  - Thank You for choosing Modding Commands. Enjoy.
- - os.rename
- - Used for renaming the png files.
  
  
