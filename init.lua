@@ -4,7 +4,7 @@ minetest.register_on_joinplayer(function(player)
 	local player_name = player:get_player_name()
 	local message = minetest.colorize("#00FFFF", "<Modding Commands> Please make backups of any files you plan to modify with any of the commands from the modding_commands mod. This mod is still experimental, but fully functional (for the most part. Besides the commands that aren't included ingame). Please keep all backups until you verify the modified files work properly.") 
 	if not ie then
-		local disclamer = minetest.colorize("#FF4000", "This mod requires an insecure environment, if you haven't done so already, please add it to secure.trusted_mods. If you don't trust it please examine the code.")
+		local disclamer = minetest.colorize("#FF4000", "This mod requires an insecure environment, if you haven't done so already, please add it to secure.trusted_mods. If you don't trust it please examine the code, before you show it as trusted.")
 		minetest.chat_send_player(player_name, disclamer)
 	end
 end)
