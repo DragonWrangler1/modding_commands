@@ -470,106 +470,8 @@ minetest.register_chatcommand("mts2lua_all", {
 
 
 
---[[ This command changes all lua schematic files in a specified directory into mts files and if specified replaces certain words in the process.
-minetest.register_chatcommand("lua2mts_all", {
-	description = "Convert all .lua schematic files in a mod directory to .mts files with optional word replacements",
-	privs = {server = true},
-	params = "<modname> [replacements]",
-	func = function(name, param)
-		local modname, replacements_str = string.match(param, "^([^ ]+) *(.*)$")
 
-		if not modname then
-			return false, "No mod name specified."
-		end
-
-		local modpath = minetest.get_modpath(modname)
-		if not modpath then
-			return false, "Mod not found: " .. modname
-		end
-
-		modpath = modpath .. "/schematics"
-
-		local replacements = {}
-		if replacements_str ~= "" then
-			for replacement in replacements_str:gmatch("[^,]+") do
-				local old, new = replacement:match("([^:]+):([^:]+)")
-				if old and new then
-					replacements[old] = new
-				end
-			end
-		end
-
-		local lua_files = minetest.get_dir_list(modpath, false)
-		local export_path = modpath-- .. DIR_DELIM .. ".."
-
-		--minetest.mkdir(export_path)
-
-		for _, file in ipairs(lua_files) do
-			if file:sub(-4) == ".lua" then
-				local lua_path = modpath .. DIR_DELIM .. file
-				local input_file = ie.io.open(lua_path, "r")
-				if input_file then
-					local content = input_file:read("*all")
-					input_file:close()
-
-					-- Apply replacements
-					for old, new in pairs(replacements) do
-						content = content:gsub(old, new)
-					end
-
-					local schematic_func, err = loadstring(content)
-				
-					if not schematic_func then
-						minetest.chat_send_player(name, "Failed to load Lua file " .. file .. ": " .. err)
-						goto continue
-					end
-
-					local schematic_env = {}
-					setfenv(schematic_func, schematic_env)
-					
-					local success, result = pcall(schematic_func)
-					
-					if not success then
-						minetest.chat_send_player(name, "Error executing Lua file " .. file .. ": " .. result)
-						goto continue
-					end
-
-					local schematic = schematic_env.schematic
-					
-					if schematic then
-						local mts_file = file:sub(1, -5) .. ".mts"
-						local mts_path = export_path .. DIR_DELIM .. mts_file
-
-						-- Serialize schematic
-						local schem_string = minetest.serialize_schematic(schematic, "mts", {})
-
-						if schem_string then
-							local output_file = ie.io.open(mts_path, "wb")
-							if output_file then
-								output_file:write(schem_string)
-								output_file:close()
-								minetest.chat_send_player(name, "Converted " .. file .. " to " .. mts_file)
-							else
-								minetest.chat_send_player(name, "Failed to write MTS file for " .. file)
-							end
-						else
-							minetest.chat_send_player(name, "Failed to serialize schematic for " .. file)
-						end
-					else
-						minetest.chat_send_player(name, "No schematic found in Lua file " .. file)
-					end
-				else
-					minetest.chat_send_player(name, "Failed to read Lua file " .. file)
-				end
-			end
-			::continue::
-		end
-
-		return true, "Conversion completed."
-	end,
-})
-]]
-
+-- This command changes all lua schematic files in a specified directory into mts files and if specified replaces certain words in the process.
 minetest.register_chatcommand("lua2mts_all", {
 	description = "Convert all .lua schematic files in a mod directory to .mts files with optional word replacements",
 	privs = {server = true},
@@ -720,4 +622,131 @@ minetest.register_chatcommand("list_schems", {
         end
         return true, result
     end,
+})
+
+minetest.register_chatcommand("unused_textures", {
+	params = "<modname>",
+	description = "Find unused textures in a specified mod",
+	privs = {server=true},
+	func = function(name, param)
+		if param == "" then
+			return false, "You must specify a mod name."
+		end
+		local modname = param
+		local modpath = minetest.get_modpath(modname)
+		if not modpath then
+			return false, "Mod '" .. modname .. "' not found."
+		end
+		local texture_path = modpath .. "/textures"
+		local textures = {}
+		local function list_files_in_directory(directory)
+			local files = {}
+			local p = ie.io.popen('ls "' .. directory .. '"')
+			for filename in p:lines() do
+				table.insert(files, filename)
+			end
+			p:close()
+			return files
+		end
+		local texture_files = list_files_in_directory(texture_path)
+		for _, filename in ipairs(texture_files) do
+			if filename:match("%.png$") then
+				textures[filename] = true
+			end
+		end
+		local function mark_texture_used(texture)
+			for sub_texture in texture:gmatch("[^%^]+") do
+				sub_texture = sub_texture:gsub("%s+", "")-- Remove any whitespace
+				if textures[sub_texture] then
+					textures[sub_texture] = nil
+				end
+			end
+		end
+		local function parse_lua_file(file_path)
+			local file = ie.io.open(file_path, "r")
+			if not file then
+				return
+			end
+			local lua_code = file:read("*all")
+			file:close()
+			for str in lua_code:gmatch('"([^"]+%.png)"') do
+				mark_texture_used(str)
+			end
+		end
+		local function scan_lua_files(directory)
+			for _, filename in ipairs(list_files_in_directory(directory)) do
+				if filename:match("%.lua$") then
+					parse_lua_file(directory .. "/" .. filename)
+				end
+			end
+		end
+		scan_lua_files(modpath)
+		for name, def in pairs(minetest.registered_nodes) do
+			if type(def.tiles) == "table" then
+				for _, texture in ipairs(def.tiles) do
+					if type(texture) == "string" then
+						mark_texture_used(texture)
+					end
+				end
+			elseif type(def.tiles) == "string" then
+				mark_texture_used(def.tiles)
+			end
+			if type(def.overlay_tiles) == "table" then
+				for _, texture in ipairs(def.overlay_tiles) do
+					if type(texture) == "string" then
+						mark_texture_used(texture)
+					end
+				end
+			elseif type(def.overlay_tiles) == "string" then
+				mark_texture_used(def.overlay_tiles)
+			end
+		end
+		for name, def in pairs(minetest.registered_items) do
+			if type(def.inventory_image) == "string" then
+				mark_texture_used(def.inventory_image)
+			end
+			if type(def.wield_image) == "string" then
+				mark_texture_used(def.wield_image)
+			end
+			if type(def.tiles) == "table" then
+				for _, texture in ipairs(def.tiles) do
+					if type(texture) == "string" then
+						mark_texture_used(texture)
+					end
+				end
+			elseif type(def.tiles) == "string" then
+				mark_texture_used(def.tiles)
+			end
+		end
+		for name, def in pairs(minetest.registered_entities) do
+			if type(def.textures) == "table" then
+				for _, texture in ipairs(def.textures) do
+					if type(texture) == "string" then
+						mark_texture_used(texture)
+					end
+				end
+			elseif type(def.textures) == "string" then
+				mark_texture_used(def.textures)
+			end
+		end
+		for _, def in pairs(minetest.registered_particles or {}) do
+			if type(def.texture) == "string" then
+				mark_texture_used(def.texture)
+			end
+		end
+		for _, def in pairs(minetest.registered_particlespawners or {}) do
+			if type(def.texture) == "string" then
+				mark_texture_used(def.texture)
+			end
+		end
+		local unused_textures = {}
+		for texture, _ in pairs(textures) do
+			table.insert(unused_textures, texture)
+		end	
+		if #unused_textures == 0 then
+			return true, "No unused textures found."
+		else
+			return true, "Unused textures:\n" .. table.concat(unused_textures, "\n")
+		end
+	end
 })
