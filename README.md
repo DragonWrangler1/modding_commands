@@ -46,13 +46,17 @@
  
  - [Mts2Lua All]
  - Convert all Mts schematic files in a specified directory into .lua files.
- 
+
+ - [Unused Textures]
+ - Lists all unused textures in the specified mod by looking through the registered nodes, items, entities, and strings in the code. 
+ - Note. Doesn't work with formspecs, huds, or particlespawners. May not always be 100% accurate.
+
 ## Extras ##
 ------------
 ############
  
  - [Credits]
- - Incase you're wondering. If you use this mod. I'd appreciate that you'd credit me for the use of it. It's not required, but I do appreciate it.
+ - Incase you're wondering. If you use this mod. I'd appreciate if you'd credit me for the use of it. It's not required, but I would appreciate it.
  
  
  - Thank You for choosing Modding Commands. Enjoy.
