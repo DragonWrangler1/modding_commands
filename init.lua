@@ -750,3 +750,57 @@ minetest.register_chatcommand("unused_textures", {
 		end
 	end
 })
+
+-- Same as bulk_replace except it should work with all enabled mods
+minetest.register_chatcommand("bulk_replace_all", {
+	params = "<word_to_replace> <replacement_word>",
+	description = "Replace specified words in all files of enabled mods and log changes",
+	func = function(name, param)
+		local word_to_replace, replacement_word = param:match("(%S+)%s+(%S+)")
+		if not (word_to_replace and replacement_word) then
+			minetest.chat_send_player(name, "Invalid parameters. Usage: /replace_words <word_to_replace> <replacement_word>")
+			return
+		end
+		local enabled_mods = minetest.get_modnames()
+		local files_modified = 0
+		local words_replaced = 0
+		local function replace_words_in_mods()
+			for _, modname in ipairs(enabled_mods) do
+				local modpath = minetest.get_modpath(modname)
+				local function replace_words_in_directory(directory)
+					local cmd = 'find "' .. directory .. '" -type f'
+					local files = ie.io.popen(cmd):lines()
+					for file in files do
+						if file:match("%.lua$") or file:match("%.conf$") or file:match("%.md$") or file:match("%.txt$") then
+							local content = ""
+							local file_handle, err = ie.io.open(file, "r")
+							if file_handle then
+								content = file_handle:read("*a")
+								file_handle:close()
+								local replaced_content, count = content:gsub(word_to_replace, replacement_word)
+								if count > 0 then
+									words_replaced = words_replaced + count
+									local file_handle, err = ie.io.open(file, "w")
+									if file_handle then
+										file_handle:write(replaced_content)
+										file_handle:close()
+										files_modified = files_modified + 1
+									else
+										minetest.chat_send_player(name, "Error writing to file: " .. file)
+									end
+								end
+							else
+								minetest.chat_send_player(name, "Error opening file: " .. file)
+							end
+						end
+					end
+				end
+				replace_words_in_directory(modpath)
+			end
+		end
+		replace_words_in_mods()
+		minetest.chat_send_player(name, "Word replacement completed.")
+		minetest.chat_send_player(name, "Number of files modified: " .. files_modified)
+		minetest.chat_send_player(name, "Number of words replaced: " .. words_replaced)
+	end,
+})
