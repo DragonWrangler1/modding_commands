@@ -1,17 +1,39 @@
 local S = minetest.get_translator("modding_commands")
+local ie = minetest.request_insecure_environment()
 
 minetest.register_on_joinplayer(function(player)
 	local player_name = player:get_player_name()
-	local message = minetest.colorize("#00FFFF", "<Modding Commands> Please make backups of any files you plan to modify with any of the commands from the modding_commands mod. This mod is still experimental, but fully functional (for the most part. Besides the commands that aren't included ingame). Please keep all backups until you verify the modified files work properly.") 
+	if minetest.settings:get_bool('backup_warning', true) then
+	local message = minetest.colorize("#00FFFF", "<Modding Commands> Please make backups of any files you plan to modify with any of the commands from the modding_commands mod. This mod is still experimental, but fully functional. Please keep all backups until you verify the modified files work properly. To disable this message please use the chat command backup_message. With param false.")
+	minetest.chat_send_player(player_name, message)
+	end
 	if not ie then
-		local disclamer = minetest.colorize("#FF4000", "This mod requires an insecure environment, if you haven't done so already, please add it to secure.trusted_mods. If you don't trust it please examine the code, before you show it as trusted.")
+		local disclamer = minetest.colorize("#FF4000", "This mod requires an insecure environment, please add it to secure.trusted_mods. If you don't trust it please examine the code.")
 		minetest.chat_send_player(player_name, disclamer)
 	end
 end)
 
 local DIR_DELIM = "/"
 
-local ie = minetest.request_insecure_environment()
+minetest.register_chatcommand("backup_warning_message", {
+	params = "<false> <true>",
+	description = "Enables or disables the create backup message",
+	privs = {server = true},
+	func = function(name, param)
+		-- Convert param to lowercase to handle case insensitivity
+		param = param:lower()
+		
+		if param == "false" then
+			minetest.settings:set("backup_warning", "false")
+			return true, "Backup warning message has been disabled."
+		elseif param == "true" then
+			minetest.settings:set("backup_warning", "true")
+			return true, "Backup warning message has been enabled."
+		else
+			return false, "Invalid parameters. Usage: /backup_warning_message false or /backup_warning_message true"
+		end
+	end
+})
 
 -- The following script checks for invalid whitespace areas.
 minetest.register_chatcommand("check_whitespace", {
@@ -625,130 +647,167 @@ minetest.register_chatcommand("list_schems", {
 })
 
 minetest.register_chatcommand("unused_textures", {
-	params = "<modname>",
-	description = "Find unused textures in a specified mod",
-	privs = {server=true},
-	func = function(name, param)
-		if param == "" then
-			return false, "You must specify a mod name."
-		end
-		local modname = param
-		local modpath = minetest.get_modpath(modname)
-		if not modpath then
-			return false, "Mod '" .. modname .. "' not found."
-		end
-		local texture_path = modpath .. "/textures"
-		local textures = {}
-		local function list_files_in_directory(directory)
-			local files = {}
-			local p = ie.io.popen('ls "' .. directory .. '"')
-			for filename in p:lines() do
-				table.insert(files, filename)
-			end
-			p:close()
-			return files
-		end
-		local texture_files = list_files_in_directory(texture_path)
-		for _, filename in ipairs(texture_files) do
-			if filename:match("%.png$") then
-				textures[filename] = true
-			end
-		end
-		local function mark_texture_used(texture)
-			for sub_texture in texture:gmatch("[^%^]+") do
-				sub_texture = sub_texture:gsub("%s+", "")-- Remove any whitespace
-				if textures[sub_texture] then
-					textures[sub_texture] = nil
-				end
-			end
-		end
-		local function parse_lua_file(file_path)
-			local file = ie.io.open(file_path, "r")
-			if not file then
-				return
-			end
-			local lua_code = file:read("*all")
-			file:close()
-			for str in lua_code:gmatch('"([^"]+%.png)"') do
-				mark_texture_used(str)
-			end
-		end
-		local function scan_lua_files(directory)
-			for _, filename in ipairs(list_files_in_directory(directory)) do
-				if filename:match("%.lua$") then
-					parse_lua_file(directory .. "/" .. filename)
-				end
-			end
-		end
-		scan_lua_files(modpath)
-		for name, def in pairs(minetest.registered_nodes) do
-			if type(def.tiles) == "table" then
-				for _, texture in ipairs(def.tiles) do
-					if type(texture) == "string" then
-						mark_texture_used(texture)
-					end
-				end
-			elseif type(def.tiles) == "string" then
-				mark_texture_used(def.tiles)
-			end
-			if type(def.overlay_tiles) == "table" then
-				for _, texture in ipairs(def.overlay_tiles) do
-					if type(texture) == "string" then
-						mark_texture_used(texture)
-					end
-				end
-			elseif type(def.overlay_tiles) == "string" then
-				mark_texture_used(def.overlay_tiles)
-			end
-		end
-		for name, def in pairs(minetest.registered_items) do
-			if type(def.inventory_image) == "string" then
-				mark_texture_used(def.inventory_image)
-			end
-			if type(def.wield_image) == "string" then
-				mark_texture_used(def.wield_image)
-			end
-			if type(def.tiles) == "table" then
-				for _, texture in ipairs(def.tiles) do
-					if type(texture) == "string" then
-						mark_texture_used(texture)
-					end
-				end
-			elseif type(def.tiles) == "string" then
-				mark_texture_used(def.tiles)
-			end
-		end
-		for name, def in pairs(minetest.registered_entities) do
-			if type(def.textures) == "table" then
-				for _, texture in ipairs(def.textures) do
-					if type(texture) == "string" then
-						mark_texture_used(texture)
-					end
-				end
-			elseif type(def.textures) == "string" then
-				mark_texture_used(def.textures)
-			end
-		end
-		for _, def in pairs(minetest.registered_particles or {}) do
-			if type(def.texture) == "string" then
-				mark_texture_used(def.texture)
-			end
-		end
-		for _, def in pairs(minetest.registered_particlespawners or {}) do
-			if type(def.texture) == "string" then
-				mark_texture_used(def.texture)
-			end
-		end
-		local unused_textures = {}
-		for texture, _ in pairs(textures) do
-			table.insert(unused_textures, texture)
-		end	
-		if #unused_textures == 0 then
-			return true, "No unused textures found."
-		else
-			return true, "Unused textures:\n" .. table.concat(unused_textures, "\n")
-		end
-	end
+    params = "<modname>",
+    description = "Find unused textures in a specified mod",
+    privs = {server=true},
+    func = function(name, param)
+        if param == "" then
+            return false, "You must specify a mod name."
+        end
+        local modname = param
+        local modpath = minetest.get_modpath(modname)
+        if not modpath then
+            return false, "Mod '" .. modname .. "' not found."
+        end
+        local texture_path = modpath .. "/textures"
+        local textures = {}
+
+        local function list_files_in_directory(directory)
+            return minetest.get_dir_list(directory, false)
+        end
+
+        local texture_files = list_files_in_directory(texture_path)
+        for _, filename in ipairs(texture_files) do
+            if filename:match("%.png$") then
+                textures[filename] = true
+            end
+        end
+
+        local function mark_texture_used(texture)
+            for sub_texture in texture:gmatch("[^%^]+") do
+                sub_texture = sub_texture:gsub("%s+", "") -- Remove any whitespace
+                if textures[sub_texture] then
+                    textures[sub_texture] = nil
+                end
+            end
+        end
+
+        local function strip_comments(lua_code)
+            lua_code = lua_code:gsub("%-%-%[%[.-%]%]", "") -- Remove block comments
+            lua_code = lua_code:gsub("%-%-.-\n", "\n") -- Remove line comments
+            return lua_code
+        end
+
+        local function parse_lua_file(file_path)
+            local file = io.open(file_path, "r")
+            if not file then
+                return
+            end
+            local lua_code = file:read("*all")
+            file:close()
+            lua_code = strip_comments(lua_code)
+            for str in lua_code:gmatch('[%a%d_.]+%.png') do
+                mark_texture_used(str)
+            end
+        end
+
+        local function scan_files(directory)
+            for _, filename in ipairs(list_files_in_directory(directory)) do
+                local filepath = directory .. "/" .. filename
+                if filename:match("%.lua$") then
+                    parse_lua_file(filepath)
+                end
+            end
+        end
+
+        scan_files(modpath)
+
+        -- Scan nodes
+        for name, def in pairs(minetest.registered_nodes) do
+            if type(def.tiles) == "table" then
+                for _, texture in ipairs(def.tiles) do
+                    if type(texture) == "string" then
+                        mark_texture_used(texture)
+                    end
+                end
+            elseif type(def.tiles) == "string" then
+                mark_texture_used(def.tiles)
+            end
+            if type(def.overlay_tiles) == "table" then
+                for _, texture in ipairs(def.overlay_tiles) do
+                    if type(texture) == "string" then
+                        mark_texture_used(texture)
+                    end
+                end
+            elseif type(def.overlay_tiles) == "string" then
+                mark_texture_used(def.overlay_tiles)
+            end
+        end
+
+        -- Scan items
+        for name, def in pairs(minetest.registered_items) do
+            if type(def.inventory_image) == "string" then
+                mark_texture_used(def.inventory_image)
+            end
+            if type(def.wield_image) == "string" then
+                mark_texture_used(def.wield_image)
+            end
+            if type(def.tiles) == "table" then
+                for _, texture in ipairs(def.tiles) do
+                    if type(texture) == "string" then
+                        mark_texture_used(texture)
+                    end
+                end
+            elseif type(def.tiles) == "string" then
+                mark_texture_used(def.tiles)
+            end
+        end
+
+        -- Scan entities
+        for name, def in pairs(minetest.registered_entities) do
+            if type(def.textures) == "table" then
+                for _, texture in ipairs(def.textures) do
+                    if type(texture) == "string" then
+                        mark_texture_used(texture)
+                    end
+                end
+            elseif type(def.textures) == "string" then
+                mark_texture_used(def.textures)
+            end
+        end
+
+        -- Scan particles
+        for _, def in pairs(minetest.registered_particles or {}) do
+            if type(def.texture) == "string" then
+                mark_texture_used(def.texture)
+            end
+            if type(def.texpool) == "table" then
+                for _, texture in ipairs(def.texpool) do
+                    if type(texture) == "string" then
+                        mark_texture_used(texture)
+                    end
+                end
+            elseif type(def.texpool) == "string" then
+                mark_texture_used(def.texpool)
+            end
+        end
+
+        -- Scan particlespawners
+        for _, def in pairs(minetest.registered_particlespawners or {}) do
+            if type(def.texture) == "string" then
+                mark_texture_used(def.texture)
+            end
+            if type(def.texpool) == "table" then
+                for _, texture in ipairs(def.texpool) do
+                    if type(texture) == "string" then
+                        mark_texture_used(texture)
+                    end
+                end
+            elseif type(def.texpool) == "string" then
+                mark_texture_used(def.texpool)
+            end
+        end
+
+        local unused_textures = {}
+        for texture, _ in pairs(textures) do
+            table.insert(unused_textures, texture)
+        end
+        if #unused_textures == 0 then
+            return true, "No unused textures found."
+        else
+            return true, "Unused textures:\n" .. table.concat(unused_textures, "\n")
+        end
+    end
 })
 
 -- Same as bulk_replace except it should work with all enabled mods
