@@ -863,3 +863,47 @@ minetest.register_chatcommand("bulk_replace_all", {
 		minetest.chat_send_player(name, "Number of words replaced: " .. words_replaced)
 	end,
 })
+
+if minetest.settings:get_bool('developer_options', true) then
+local max_registry_limit = 32767
+	
+local function count_registered_items()
+    local node_count = 0
+    local craftitem_count = 0
+    local tool_count = 0
+    local other_count = 0
+    
+    for name, def in pairs(minetest.registered_items) do
+        if def.type == "node" then
+            node_count = node_count + 1
+        elseif def.type == "craftitem" then
+            craftitem_count = craftitem_count + 1
+        elseif def.type == "tool" then
+            tool_count = tool_count + 1
+        else
+            other_count = other_count + 1
+        end
+    end
+    
+    local total_count = node_count + craftitem_count + tool_count + other_count
+    return total_count, node_count, craftitem_count, tool_count, other_count
+end
+
+minetest.register_on_joinplayer(function(player)
+    local player_name = player:get_player_name()
+    
+    local total_count, node_count, craftitem_count, tool_count, other_count = count_registered_items()
+
+    if total_count >= max_registry_limit then
+        minetest.kick_player(player_name, "Server registry limit reached: " .. total_count .. " items registered.")
+        error("Server registry limit reached: " .. total_count .. " items registered.")
+    else
+        minetest.chat_send_player(player_name, "Registry status:")
+        minetest.chat_send_player(player_name, "Nodes: " .. node_count)
+        minetest.chat_send_player(player_name, "Craftitems: " .. craftitem_count)
+        minetest.chat_send_player(player_name, "Tools: " .. tool_count)
+        minetest.chat_send_player(player_name, "Other items: " .. other_count)
+        minetest.chat_send_player(player_name, "Total registered: " .. total_count .. " out of " .. max_registry_limit)
+    end
+end)
+end
