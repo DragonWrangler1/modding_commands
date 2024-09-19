@@ -1,2 +1,6 @@
 # Backup Warning
 backup_warning (Backup Warning) bool true
+
+[Development]
+# This Setting is only for developer use, average players will get no benefit from this.
+developer_options (Toggles some developer information) bool true
